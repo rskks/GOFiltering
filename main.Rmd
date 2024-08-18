@@ -1,0 +1,138 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+Load the libraries
+```{r}
+library(dplyr)
+library(readr)
+library(readxl)
+```
+
+Read protein expression data from the input file
+```{r}
+protein_data <- read_xlsx("./data/input/protein_data_avgN.xlsx")
+protein_data <- as.data.frame(protein_data, check.names = FALSE)
+rownames(protein_data) <- protein_data$protein
+```
+
+Initialize an empty data frame for storing GO protein data
+```{r}
+GOprotein_data <- data.frame(matrix(ncol = ncol(protein_data), nrow = 0), check.names = FALSE)
+condition_list <- as.character(colnames(protein_data))
+colnames(GOprotein_data) <- condition_list
+
+```
+
+Get the list of .tsv files from the directory, iterate through each file, read the tsv file, split the protein names in 'matching proteins in your input (labels)' column, ensure the condition column exists, iterate through each protein, ensure the protein row exists, ensure that the expression value is correctly assigned, and check the resulting GOprotein_data
+
+```{r}
+# Get the list of .tsv files from the directory
+file_list <- list.files(path = "./data/input/ranked", pattern = "\\.tsv$", full.names = TRUE)
+
+# Iterate through each file
+for (file in file_list) {
+  
+  # Extract the condition name (XX) from the file name
+  condition <- gsub("^(.*?)_enrichment\\..*", "\\1", basename(file))
+  print(paste("Processing condition:", condition))
+  
+  # Read the tsv file
+  tsv_data <- read_tsv(file, show_col_types = FALSE)
+  
+  # Split the protein names in 'matching proteins in your input (labels)' column
+  protein_list <- unlist(strsplit(tsv_data$`matching proteins in your input (labels)`, ","))
+  protein_list <- as.character(protein_list)
+  #print(paste("Proteins found:", paste(protein_list, collapse = ", ")))
+  
+  # Ensure the condition column exists
+  if (!(condition %in% colnames(GOprotein_data))) {
+    GOprotein_data[[condition]] <- NA
+  }
+  
+  # Iterate through each protein
+  for (protein in protein_list) {
+    #print(paste("Processing protein:", protein))
+    
+    # Ensure the protein row exists
+    if (!(protein %in% rownames(GOprotein_data))) {
+      GOprotein_data <- rbind(GOprotein_data, setNames(as.list(rep(NA, ncol(GOprotein_data))), colnames(GOprotein_data)))
+      rownames(GOprotein_data)[nrow(GOprotein_data)] <- protein
+    }
+    
+    # Ensure that the expression value is correctly assigned
+    if(protein %in% rownames(protein_data)) {
+      GOprotein_data[protein, condition] <- protein_data[protein, condition]
+    } else {
+      warning(paste("Protein", protein, "not found in protein_data"))
+    }
+  }
+}
+
+# Check the resulting GOprotein_data
+#print(GOprotein_data)
+
+```
+Remove columns with all NA values
+
+```{r}
+#remove columns with all NA values
+GOprotein_data <- GOprotein_data[, colSums(is.na(GOprotein_data)) < nrow(GOprotein_data)]
+head(GOprotein_data)
+```
+Based on the GOprotein_data, create a heatmap and PCA plot
+```{r}
+heatmap_data <- as.data.frame(GOprotein_data, check.names = FALSE)
+heatmap_data[is.na(heatmap_data)] <- 0
+heatmap_data <- heatmap_data[order(rowMeans(heatmap_data, na.rm = TRUE), decreasing = TRUE),]
+heatmap_data <- heatmap_data[,order(colMeans(heatmap_data, na.rm = TRUE), decreasing = TRUE)]
+```
+
+Heatmap
+```{r}
+library(pheatmap)
+heatmap_data2 <- heatmap_data
+heatmap_data2 <- heatmap_data2[, !colnames(heatmap_data2) %in% '3DhEV']
+pheatmap(heatmap_data2, scale = "column", cluster_rows = TRUE, cluster_cols = TRUE, show_rownames = FALSE, show_colnames = TRUE, color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+PCA plot libraries
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(ggfortify)
+```
+
+PCA plot
+```{r}
+# Ensure heatmap_data is numeric
+PCA_data <- as.data.frame(lapply(heatmap_data, as.numeric, check.names = FALSE))
+PCA_data <- PCA_data[, apply(PCA_data, 2, var, na.rm = TRUE) != 0]
+
+
+# Perform PCA without additional scaling
+pca_data <- prcomp(t(PCA_data), scale. = FALSE)
+
+# Assuming the condition corresponds to the columns in the original data
+condition <- colnames(GOprotein_data)
+
+# Create a data frame for plotting
+pca_df <- data.frame(pca_data$x, condition = condition)
+
+library(ggplot2)
+library(ggrepel)
+
+# Plot the PCA with repelled labels
+ggplot(pca_df, aes(x = PC1, y = PC2, label = condition, color = condition)) +
+    geom_point(size = 3) +  # Adjust point size as needed
+    geom_text_repel(size = 3, max.overlaps = 10, box.padding = 0.5, point.padding = 0.5, segment.color = 'grey50') +
+    theme_minimal() +
+    theme(legend.position = "right") +
+    labs(x = paste0("PC1 (", round(pca_data$sdev[1]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
+         y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
+         title = "PCA Plot")
+
+
+```
