@@ -16,6 +16,10 @@ Read protein expression data from the input file
 protein_data <- read_xlsx("./data/input/protein_data_avgN.xlsx")
 protein_data <- as.data.frame(protein_data, check.names = FALSE)
 rownames(protein_data) <- protein_data$protein
+#remove $protein column
+protein_data <- protein_data[,-1]
+#round up the data keeping only 2 decimal places
+protein_data <- round(protein_data, 2)
 ```
 
 Initialize an empty data frame for storing GO protein data
