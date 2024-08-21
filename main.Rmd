@@ -22,6 +22,74 @@ protein_data <- protein_data[,-1]
 protein_data <- round(protein_data, 2)
 ```
 
+```{r}
+rna_data <- read_csv("./browse/mirna_data_avgN.csv")
+rna_data <- as.data.frame(rna_data, check.names = FALSE)
+rownames(rna_data) <- rna_data$rna
+#remove $protein column
+rna_data <- rna_data[,-1]
+rna_data <- round(rna_data, 2)
+#round up the data keeping only 2 decimal places
+
+data<-lipid_data
+```
+
+Lipid data
+```{r}
+lipid_data <- read.csv("./browse/lipid_data_avgN.csv")
+lipid_data <- as.data.frame(lipid_data, check.names = FALSE)
+rownames(lipid_data) <- lipid_data$lipid
+#remove $protein column
+lipid_data <- lipid_data[,-1]
+lipid_data <- round(lipid_data, 2)
+data <- lipid_data
+```
+```{r}
+  group1 <- c("3DEV")
+  group2 <- c("2DSuper", "3DSuper", "FPLCSuper")
+  group3 <- c("2DExomere", "3DExomere", "FPLCExomere")
+  group4 <- c("2DEVP", "3DEVP")
+  
+  groups <- list(EVs = group1, Super = group2, Exomere = group3, EVp = group4)
+  
+  # Extract the data for the selected lipid
+  lipid_data_subset <- data[input$lipid, , drop = FALSE]
+  
+  # Initialize vectors for group names and expression values
+  group_names <- c()
+  expression_values <- c()
+  
+  # Iterate over the groups and extract data
+  for (group_name in names(groups)) {
+    group_cols <- groups[[group_name]]
+    valid_cols <- intersect(group_cols, colnames(lipid_data_subset))
+    
+    if (length(valid_cols) > 0) {
+      group_names <- c(group_names, rep(group_name, length(valid_cols)))
+      expression_values <- c(expression_values, as.vector(t(lipid_data_subset[, valid_cols])))
+    } else {
+      cat("Warning: No valid columns found for group", group_name, "\n")
+    }
+  }
+  
+  # Create a data frame for plotting
+  grouped_data <- data.frame(
+    Group = factor(group_names, levels = c("EVs", "Super", "Exomere", "EVp")),
+    Expression = expression_values
+  )
+  
+  # Debugging: Print the structure of grouped_data
+  print(head(grouped_data))
+  
+  # Generate the plot using pirateplot
+  pirateplot(formula = Expression ~ Group, data = grouped_data,
+             theme = "white", 
+             pal = c("EVs" = "steelblue", "Super" = "lightcoral", "Exomere" = "mediumseagreen", "EVp" = "goldenrod"),
+             ylab = "Expression", 
+             xlab = "Group", 
+             main = paste("Grouped lipid presence for", input$lipid))
+```
+
 Initialize an empty data frame for storing GO protein data
 ```{r}
 GOprotein_data <- data.frame(matrix(ncol = ncol(protein_data), nrow = 0), check.names = FALSE)
@@ -130,13 +198,13 @@ library(ggrepel)
 
 # Plot the PCA with repelled labels
 ggplot(pca_df, aes(x = PC1, y = PC2, label = condition, color = condition)) +
-    geom_point(size = 3) +  # Adjust point size as needed
+    geom_point(size = 3) +
     geom_text_repel(size = 3, max.overlaps = 10, box.padding = 0.5, point.padding = 0.5, segment.color = 'grey50') +
     theme_minimal() +
     theme(legend.position = "right") +
     labs(x = paste0("PC1 (", round(pca_data$sdev[1]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
-         y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
-         title = "PCA Plot")
+         y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)") #,
+         #title = "PCA Plot")
 
 
 ```

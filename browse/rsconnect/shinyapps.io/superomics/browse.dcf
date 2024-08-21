@@ -1,0 +1,10 @@
+name: browse
+title:
+username: superomics
+account: superomics
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 12494928
+bundleId: 9012322
+url: https://superomics.shinyapps.io/browse/
+version: 1

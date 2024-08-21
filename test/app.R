@@ -3,14 +3,19 @@ library(ggplot2)
 library(DT)
 library(shinythemes)  # For themes
 library(scales)
+library(readxl)
+library(reactable)
 
 # Define UI for application
 ui <- fluidPage(
   theme = shinytheme("cerulean"),  # Add a theme for better styling
-  titlePanel("Nanoparticle Dataset Explorer"),
+  titlePanel("EV and NVEP Dataset Explorer"),
   sidebarLayout(
+    fluid = TRUE,
     sidebarPanel(
       width = 3, # Make the sidebar take up 1/3 of the width
+      fluid = TRUE,
+      
       selectInput("dataset", "Choose a Dataset:",
                   choices = c("Proteomics", "RNA-seq", "Lipidomics")),
       uiOutput("dynamicUI"),
@@ -20,10 +25,10 @@ ui <- fluidPage(
     ),
     mainPanel(
       fluidRow(
-        column(9, plotOutput("plot", height = "400px"))  # Adjusted to fit the desired layout
+        column(12, plotOutput("plot", height = "400px"))  # Adjusted to fit the desired layout
       ),
       fluidRow(
-        column(12, DT::DTOutput("datatable"))
+        column(12, reactableOutput("datatable"))
       ),
       style = "padding: 20px;"  # Add padding for better layout
     )
@@ -32,25 +37,50 @@ ui <- fluidPage(
 
 # Define server logic
 server <- function(input, output, session) {
+  # Load the data
+  protein_data <- reactive({
+    file_path <- "protein_data_avgN.xlsx"
+    cat("Loading data from:", file_path, "\n")  # Debugging output
+    if (file.exists(file_path)) {
+      cat("File exists. Reading the data...\n")
+      data <- read_xlsx(file_path)
+      cat("Data loaded. Converting to data frame...\n")
+      data <- as.data.frame(data, check.names = FALSE)
+      rownames(data) <- data$protein
+      data <- data[,-1]  # Remove the $protein column
+      data <- round(data, 2)  # Round data to 2 decimal places
+      cat("Data processing complete. Returning data...\n")
+      return(data)
+    } else {
+      stop("File not found: ", file_path)
+    }
+  })
   
   output$dynamicUI <- renderUI({
     switch(input$dataset,
-           "Proteomics" = selectizeInput("protein", "Select Protein:", choices = rownames(protein_data)),
-           "RNA-seq" = selectizeInput("gene", "Select Gene:", choices = unique(rnaseq_data$Gene)),
-           "Lipidomics" = selectizeInput("lipid", "Select Lipid:", choices = unique(lipidomics_data$Lipid))
+           "Proteomics" = selectizeInput("protein", "Select Protein:", 
+                                         choices = rownames(protein_data())),
+           "RNA-seq" = selectizeInput("gene", "Select Gene:", 
+                                      choices = unique(rnaseq_data$Gene)),
+           "Lipidomics" = selectizeInput("lipid", "Select Lipid:", 
+                                         choices = unique(lipidomics_data$Lipid))
     )
   })
   
   output$plot <- renderPlot({
     data <- switch(input$dataset,
-                   "Proteomics" = protein_data,
+                   "Proteomics" = protein_data(),
                    "RNA-seq" = rnaseq_data,
                    "Lipidomics" = lipidomics_data)
     
     plot_type <- input$plotType
     
     if (input$dataset == "Proteomics") {
-      if (plot_type == "Individual") {
+      cat("Selected dataset is Proteomics.\n")
+      cat("Checking if protein is selected...\n")
+      if (!is.null(input$protein) && input$protein %in% rownames(data)) {
+        cat("Protein is selected and valid.\n")
+        if (plot_type == "Individual") {
         if (input$protein %in% rownames(data)) {
           data_to_plot <- as.data.frame(t(data[rownames(data) == input$protein, ]))
           colnames(data_to_plot) <- "Expression"
@@ -169,24 +199,48 @@ server <- function(input, output, session) {
           labs(title = "No data available for selected lipid")
       }
     }
+    } else {
+      cat("Protein is NULL or not in the dataset.\n")
+      ggplot() + labs(title = "No data available for selected protein")
+    }
+  }
+  )
+  
+  data <- reactive({
+    switch(input$dataset,
+           "Proteomics" = protein_data(),
+           "RNA-seq" = rnaseq_data,
+           "Lipidomics" = lipidomics_data)
   })
   
-  output$datatable <- DT::renderDT({
-    data <- switch(input$dataset,
-                   "Proteomics" = protein_data,
-                   "RNA-seq" = rnaseq_data,
-                   "Lipidomics" = lipidomics_data)
-    DT::datatable(data, options = list(
-      pageLength = 10,
-      lengthMenu = c(5, 10, 15, 20),
-      initComplete = JS(
-        "function(settings, json) {",
-        "  $(this.api().table().header()).css({'background-color': '#f5f5f5', 'color': '#333'});",
-        "  $(this.api().table().body()).css({'background-color': '#fff'});",
-        "}"
+  # Render the reactable table
+  output$datatable <- renderReactable({
+    df <- data()
+    
+    if (is.data.frame(df)) {
+      cat("Data is a data frame.\n")
+    } else {
+      cat("Data is not a data frame!\n")
+      str(df)  # Print the structure of the data to see what's wrong
+    }
+    
+    reactable(
+      df,
+      searchable = TRUE,
+      pagination = TRUE,  # Enables pagination
+      defaultPageSize = 10,  # Default page length
+      pageSizeOptions = c(5, 10, 20),  # Length menu options
+      theme = reactable::reactableTheme(
+        headerStyle = list(
+          backgroundColor = '#f5f5f5',
+          color = '#333'
+        ),
+        cellStyle = list(
+          backgroundColor = '#fff'
+        )
       )
-    ), style = "bootstrap4")  # Use Bootstrap 4 styling for better appearance
-  }, server = FALSE)  # Ensure client-side processing for better performance
+    )
+  })
 }
 
 # Run the application 
