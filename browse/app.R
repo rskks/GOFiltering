@@ -21,7 +21,7 @@ ui <- fluidPage(
                   choices = c("Proteomics", "RNA-seq", "Lipidomics")),
       uiOutput("dynamicUI"),
       selectInput("grouping", "Grouping", choices = c("Individual", "Grouped")),
-      checkboxInput("facet_isolation", "Isolation", value = FALSE),
+      checkboxInput("facet_isolation", "Isolation Method", value = FALSE),
       checkboxInput("facet_growth", "Growth Conditions", value = FALSE),
       style = "padding: 20px;"  # Add padding for better layout
     ),
