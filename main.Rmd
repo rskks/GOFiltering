@@ -148,8 +148,8 @@ ggplot(pca_df, aes(x = PC1, y = PC2, label = condition, color = condition)) +
     theme_minimal() +
     theme(legend.position = "right") +
     labs(x = paste0("PC1 (", round(pca_data$sdev[1]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
-         y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)") #,
-         #title = "PCA Plot")
+         y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)") ,
+         title = "PCA Plot") 
 
 
 ```

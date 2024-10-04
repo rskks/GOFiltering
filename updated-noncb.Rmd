@@ -1,0 +1,151 @@
+---
+title: "updated-noncb"
+author: "rskks"
+date: "2024-09-27"
+output: html_document
+---
+
+---
+title: "updated_noNCB"
+author: "rskks"
+date: "2024-09-27"
+output: html_document
+---
+Load the libraries 
+
+```{r}
+suppressPackageStartupMessages({
+    library(gplots)     # heatmap.2
+    library(dendextend) # make and color dendrogram
+    library(colorspace) # diverge_hcl / rainbow_hcl / heat_hcl color palettes
+    library(readr)      # read_csv
+})
+```
+
+Load the data
+```{r}
+# Load the data
+protein_data <- read_csv("./data/input/protein_data_normnoNCB.csv", show_col_types = FALSE)
+
+# Set 'protein' column as row names
+protein_data <- as.data.frame(protein_data, check.names = FALSE)
+rownames(protein_data) <- protein_data$protein
+
+# Remove 'protein' column
+protein_data <- protein_data[,-1]
+
+# Round values to 2 decimal places
+protein_data <- round(protein_data, 2)
+
+# Check the data
+head(protein_data)
+```
+
+
+Initialize an empty data frame for storing GO protein data
+```{r}
+GOprotein_data <- data.frame(matrix(ncol = ncol(protein_data), nrow = 0), check.names = FALSE)
+condition_list <- as.character(colnames(protein_data))
+colnames(GOprotein_data) <- condition_list
+
+```
+
+```{r}
+# Initialize an empty vector to store all unique proteins found in .tsv files
+master_protein_list <- character()
+
+# Get the list of .tsv files from the directory
+file_list <- list.files(path = "./data/input/ranked", pattern = "\\.tsv$", full.names = TRUE)
+
+# Collect all proteins from the .tsv files
+for (file in file_list) {
+  
+  # Read the tsv file
+  tsv_data <- read_tsv(file, show_col_types = FALSE)
+  
+  # Split the protein names in 'matching proteins in your input (labels)' column
+  protein_list <- unlist(strsplit(tsv_data$`matching proteins in your input (labels)`, ","))
+  protein_list <- as.character(protein_list)
+  
+  # Add proteins to the master list (ensure no duplicates by using unique)
+  master_protein_list <- unique(c(master_protein_list, protein_list))
+}
+
+# Subset protein_data by keeping only the rows where the protein names are in master_protein_list
+GOprotein_data <- protein_data[rownames(protein_data) %in% master_protein_list, ]
+
+# Check the resulting subset
+print(dim(GOprotein_data))  # Print the dimensions of the subset
+head(GOprotein_data)        # Preview the first few rows
+
+```
+
+Remove columns with all NA values
+
+```{r}
+#remove columns with all NA values
+GOprotein_data <- GOprotein_data[, colSums(is.na(GOprotein_data)) < nrow(GOprotein_data)]
+head(GOprotein_data)
+```
+
+Based on the GOprotein_data, create a heatmap and PCA plot
+```{r}
+heatmap_data <- as.data.frame(GOprotein_data, check.names = FALSE)
+heatmap_data[is.na(heatmap_data)] <- 0
+heatmap_data <- heatmap_data[order(rowMeans(heatmap_data, na.rm = TRUE), decreasing = TRUE),]
+heatmap_data <- heatmap_data[,order(colMeans(heatmap_data, na.rm = TRUE), decreasing = TRUE)]
+```
+
+Heatmap
+```{r}
+library(pheatmap)
+heatmap_data2 <- heatmap_data
+heatmap_data2 <- heatmap_data2[, !colnames(heatmap_data2) %in% '3DhEV']
+pheatmap(heatmap_data2, scale = "column", cluster_rows = TRUE, cluster_cols = TRUE, show_rownames = FALSE, show_colnames = TRUE, color = colorRampPalette(c("blue", "white", "red"))(100))
+```
+
+
+
+PCA plot libraries
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(ggfortify)
+```
+
+```{r}
+# Ensure GOprotein_data is numeric
+PCA_data <- as.data.frame(lapply(GOprotein_data, as.numeric, check.names = FALSE))
+PCA_data <- PCA_data[, apply(PCA_data, 2, var, na.rm = TRUE) != 0]
+
+# Perform PCA without additional scaling
+pca_data <- prcomp(t(PCA_data), scale. = FALSE)
+
+# Extract conditions from column names
+conditions <- colnames(GOprotein_data)
+
+# Create a data frame for plotting
+pca_df <- data.frame(pca_data$x)
+
+# Extract color_group and shape_group
+pca_df$color_group <- gsub("^[0-9]+D|FPLC|(_S\\d+)", "", conditions)  # Remove prefix and suffix for color
+pca_df$color_group <- as.factor(pca_df$color_group)  # Convert to factor for shape
+pca_df$shape_group <- gsub(".*?([0-9]+D|FPLC).*", "\\1", conditions)  # Remove suffix for shape
+# Rename the shape levels
+pca_df$shape_group <- gsub("2D", "UC 2D", pca_df$shape_group)
+pca_df$shape_group <- gsub("3D", "UC 3D", pca_df$shape_group)
+pca_df$shape_group <- gsub("FPLC", "FPLC 3D", pca_df$shape_group)
+pca_df$shape_group <- as.factor(pca_df$shape_group)  # Convert to factor for color
+
+pca_df$combined_group <- interaction(pca_df$color_group, pca_df$shape_group)
+
+# Use the combined_group for color and shape in the plot
+ggplot(pca_df, aes(x = PC1, y = PC2)) +
+    geom_point(aes(color = color_group, shape = shape_group), size = 8) +
+    theme_minimal() +
+    labs(x = paste0("PC1 (", round(pca_data$sdev[1]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
+         y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
+         title = "") +
+    guides(color = guide_legend(title = "Particle",order = 1), shape = guide_legend(title = "Method"))
+```
+
