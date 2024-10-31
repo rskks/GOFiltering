@@ -102,6 +102,8 @@ library(pheatmap)
 heatmap_data2 <- heatmap_data
 heatmap_data2 <- heatmap_data2[, !colnames(heatmap_data2) %in% '3DhEV']
 pheatmap(heatmap_data2, scale = "column", cluster_rows = TRUE, cluster_cols = TRUE, show_rownames = FALSE, show_colnames = TRUE, color = colorRampPalette(c("blue", "white", "red"))(100))
+
+dev.print(pdf, "heatmap_redo.pdf", width = 8.46, height = 10.34)
 ```
 
 
@@ -135,6 +137,7 @@ pca_df$shape_group <- gsub(".*?([0-9]+D|FPLC).*", "\\1", conditions)  # Remove s
 pca_df$shape_group <- gsub("2D", "UC 2D", pca_df$shape_group)
 pca_df$shape_group <- gsub("3D", "UC 3D", pca_df$shape_group)
 pca_df$shape_group <- gsub("FPLC", "FPLC 3D", pca_df$shape_group)
+pca_df$shape_group <- ifelse(pca_df$color_group %in% c("EV", "hEV", "NV"), "DGUC 3D", pca_df$shape_group)
 pca_df$shape_group <- as.factor(pca_df$shape_group)  # Convert to factor for color
 
 pca_df$combined_group <- interaction(pca_df$color_group, pca_df$shape_group)
@@ -146,6 +149,51 @@ ggplot(pca_df, aes(x = PC1, y = PC2)) +
     labs(x = paste0("PC1 (", round(pca_data$sdev[1]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
          y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
          title = "") +
+    scale_shape_manual(values = c("UC 2D" = 17, "DGUC 3D" = 18, "UC 3D" = 15, "FPLC 3D" = 8)) +  # Custom shapes
     guides(color = guide_legend(title = "Particle",order = 1), shape = guide_legend(title = "Method"))
+
+dev.print(pdf, "PCA_redo2.pdf", width = 8.46, height = 8.46)
 ```
 
+```{r}
+# Ensure GOprotein_data is numeric
+PCA_data <- as.data.frame(lapply(GOprotein_data, as.numeric, check.names = FALSE))
+PCA_data <- PCA_data[, apply(PCA_data, 2, var, na.rm = TRUE) != 0]
+
+# Perform PCA without additional scaling
+pca_data <- prcomp(t(PCA_data), scale. = FALSE)
+
+# Extract conditions from column names
+conditions <- colnames(GOprotein_data)
+
+# Create a data frame for plotting
+pca_df <- data.frame(pca_data$x)
+
+# Extract color_group and shape_group
+pca_df$color_group <- gsub("^[0-9]+D|FPLC|(_S\\d+)", "", conditions)  # Remove prefix and suffix for color
+pca_df$color_group <- as.factor(pca_df$color_group)  # Convert to factor for color
+pca_df$shape_group <- gsub(".*?([0-9]+D|FPLC).*", "\\1", conditions)  # Extract part for shape
+# Rename the shape levels
+pca_df$shape_group <- gsub("2D", "UC 2D", pca_df$shape_group)
+pca_df$shape_group <- gsub("3D", "UC 3D", pca_df$shape_group)
+pca_df$shape_group <- gsub("FPLC", "FPLC 3D", pca_df$shape_group)
+pca_df$shape_group <- ifelse(pca_df$color_group %in% c("EV", "hEV", "NV"), "DGUC 3D", pca_df$shape_group)
+pca_df$shape_group <- as.factor(pca_df$shape_group)  # Convert to factor for shape
+
+# Define custom color and shape mappings
+color_mapping <- c("EVP" = "#E69F00", "EV" = "lightpink", "EVP" = "purple", "Exomere" = "blue", "Supermere" = "darkgreen", "hEV" = "salmon", "Other" = "#56B4E9")  # Example color mapping
+shape_mapping <- c("UC 2D" = 16, "UC 3D" = 17, "FPLC 3D" = 18)  # Example shape mapping
+
+# Plot with a unified legend
+ggplot(pca_df, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = color_group, shape = shape_group), size = 8) +
+  scale_color_manual(values = color_mapping) +  # Apply the custom color mapping
+  scale_shape_manual(values = shape_mapping) +  # Apply the custom shape mapping
+  theme_minimal() +
+  labs(x = paste0("PC1 (", round(pca_data$sdev[1]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
+       y = paste0("PC2 (", round(pca_data$sdev[2]^2 / sum(pca_data$sdev^2) * 100, 2), "%)"),
+       title = "") +
+  guides(color = guide_legend("Group", 
+                              override.aes = list(shape = shape_mapping)))  # Override shapes within color legend
+
+```

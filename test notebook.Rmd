@@ -1,0 +1,14 @@
+---
+title: "Untitled"
+author: "rskks"
+date: "2024-10-04"
+output: html_document
+---
+
+```{r}
+test_count <- read.delim("data/input/total.count", header = TRUE)
+
+test_count$Species <- gsub(":.*", "", test_count$Feature)
+test_count$Species <- as.factor(test_count$Species)
+test_count$Feature2 <- gsub(".*:", "", test_count$Feature)
+```

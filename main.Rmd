@@ -13,7 +13,7 @@ library(readxl)
 
 Read protein expression data from the input file
 ```{r}
-protein_data <- read_xlsx("./data/input/protein_data_avgN.xlsx")
+protein_data <- read_csv("./data/input/protein_data_normnoNCB.csv")
 protein_data <- as.data.frame(protein_data, check.names = FALSE)
 rownames(protein_data) <- protein_data$protein
 #remove $protein column

@@ -1,0 +1,15 @@
+---
+title: "venn"
+author: "rskks"
+date: "2024-10-07"
+output: html_document
+---
+Loading libraries
+```{r}
+library(readxl)
+```
+
+Importing fibroblast datasets
+```{r}
+fibro <- read_xlsx('data/input/fibro.xlsx')
+```

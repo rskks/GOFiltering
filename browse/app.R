@@ -85,40 +85,41 @@ server <- function(input, output, session) {
   })
   
   lipid_data <- reactive({
-    file_path <- "lipid_data_avgN.csv"
-    cat("Loading data from:", file_path, "\n")  # Debugging output
+    req(input$dataset == "Lipidomics")  # Ensure 'Lipidomics' is selected
+    req(input$lipidomics_type)  # Ensure 'lipidomics_type' is not NULL
     
-    if (file.exists(file_path)) {
-      cat("File exists. Reading the data...\n")
-      data <- read.csv(file_path, stringsAsFactors = FALSE)  # Ensure characters are not converted to factors
-      cat("Data loaded. Converting to data frame...\n")
-      
-      # Check if the column to be used as row names exists
-      if ("lipid" %in% colnames(data)) {
-        data$lipid <- as.character(data$lipid)  # Ensure the lipid column is treated as character
-        
-        rownames(data) <- data$lipid
-        data <- data[,-which(colnames(data) == "lipid")]  # Remove the lipid column
-        
-        cat("Data processing complete. Returning data...\n")
-        return(data)
-      } else {
-        stop("Column 'lipid' not found in the data")
-      }
-    } else {
-      stop("File not found: ", file_path)
-    }
+    file <- switch(input$lipidomics_type,
+                   "Category" = "/lipid_data_cat.csv",
+                   "Class" = "/lipid_data_cl.csv",
+                   "Subclass" = "/lipid_data_subcl.csv",
+                   "Species" = "/lipid_data_spe.csv",
+                   stop("Invalid lipidomics type selected"))  # Provide a default error if none match
+    
+    read.csv(file)  # Load the CSV based on the selected type
   })
   
+  # Dynamic UI rendering for Proteomics, RNA-seq, or Lipidomics (with sub-types for Lipidomics)
   output$dynamicUI <- renderUI({
-    switch(input$dataset,
-           "Proteomics" = selectizeInput("protein", "Select Protein:", 
-                                         choices = rownames(protein_data())),
-           "RNA-seq" = selectizeInput("rna", "Select miRNA:", 
-                                      choices = rownames(rna_data())),
-           "Lipidomics" = selectizeInput("lipid", "Select Lipid:", 
-                                         choices = rownames(lipid_data()))
-    )
+    if (input$dataset == "Lipidomics") {
+      tagList(
+        selectInput("lipidomics_type", "Choose Lipidomics Type:",
+                    choices = c("Category", "Class", "Subclass", "Species")),
+        # Adding a condition to ensure lipid selection dropdown is available after type is selected
+        conditionalPanel(
+          condition = "input.lipidomics_type != null",  # Check if a lipidomics type is selected
+          selectizeInput("lipid", "Select Lipid:", 
+                         choices = if (!is.null(lipid_data())) rownames(lipid_data()) else NULL)
+        )
+      )
+    } else {
+      # Other dataset types: Proteomics or RNA-seq
+      switch(input$dataset,
+             "Proteomics" = selectizeInput("protein", "Select Protein:", 
+                                           choices = rownames(protein_data())),
+             "RNA-seq" = selectizeInput("rna", "Select miRNA:", 
+                                        choices = rownames(rna_data()))
+      )
+    }
   })
   
   output$plot <- renderPlot({
@@ -260,72 +261,84 @@ server <- function(input, output, session) {
       
     } else if (input$dataset == "Lipidomics") {
       if (!is.null(input$lipid) && input$lipid %in% rownames(data)) {
+        selected_protein_data <- data[input$lipid, , drop = FALSE]
+        grouping <- input$grouping
+        plot_type <- ifelse(grouping == "Individual", "dotplot", "pirateplot")
+        
+        # Get the meta information for faceting
+        meta_data <- protein_meta()
+        
+        individual_data <- as.vector(unlist(meta_data["Individual", colnames(selected_protein_data)]))
+        partile_data <- as.vector(unlist(meta_data["Particle", colnames(selected_protein_data)]))
+        isolation_data <- as.vector(unlist(meta_data["Isolation", colnames(selected_protein_data)]))
+        growth_data <- as.vector(unlist(meta_data["Growth", colnames(selected_protein_data)]))
+        
+        total_data <- data.frame(
+          Condition = colnames(selected_protein_data),
+          Value = as.numeric(selected_protein_data),
+          Individual = factor(individual_data),
+          Particle = factor(partile_data),
+          Isolation = factor(isolation_data),
+          Growth = factor(growth_data)
+        )
+        
+        print(head(total_data))
+        
         if (input$grouping == "Individual") {
-          data_to_plot <- as.data.frame(t(data[rownames(data) == input$lipid, ]))
-          colnames(data_to_plot) <- "Expression"
-          data_to_plot$Condition <- rownames(data_to_plot)
-          
-          print(head(data_to_plot))
-          
-          ggplot(data_to_plot, aes(x = Condition, y = Expression)) +
-            geom_point(color = "steelblue", size = 4) +
+          # Create the plot
+          p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
+            geom_point(position = position_jitter(width = 0.1), size = 3) +
             theme_minimal(base_size = 15) +
             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-            labs(title = paste("Expression of", input$lipid)) +
-            scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
-        } else if (input$grouping == "Grouped") {
-          # Define the groups
-          group1 <- c("EV3D")
-          group2 <- c("Super2D", "Super3D", "SuperFPLC")
-          group3 <- c("Exomere2D", "Exomere3D", "ExomereFPLC")
-          group4 <- c("EVP2D", "EVP3D")
+            labs(y = "Normalized counts",
+                 x = NULL,  # Remove the default x-axis label
+                 title = paste("Expression of", input$lipid)) +
+            scale_x_discrete(labels = function(x) {
+              # Create custom labels based on the levels of 'Individual'
+              sapply(x, function(i) {
+                paste(
+                  unique(total_data$Particle[total_data$Individual == i]), 
+                  "", unique(total_data$Isolation[total_data$Individual == i]), 
+                  "", unique(total_data$Growth[total_data$Individual == i]), 
+                  "", i
+                )
+              })
+            }) #+
+          #scale_color_manual(values = c("EVs" = "steelblue", "Group2" = "darkorange"))
           
-          groups <- list(EVs = group1, Super = group2, Exomere = group3, EVp = group4)
           
-          # Extract the data for the selected lipid
-          lipid_data_subset <- data[input$lipid, , drop = FALSE]
-          
-          # Initialize vectors for group names and expression values
-          group_names <- c()
-          expression_values <- c()
-          
-          # Iterate over the groups and extract data
-          for (group_name in names(groups)) {
-            group_cols <- groups[[group_name]]
-            valid_cols <- intersect(group_cols, colnames(lipid_data_subset))
-            
-            if (length(valid_cols) > 0) {
-              group_names <- c(group_names, rep(group_name, length(valid_cols)))
-              expression_values <- c(expression_values, as.vector(t(lipid_data_subset[, valid_cols])))
-            } else {
-              cat("Warning: No valid columns found for group", group_name, "\n")
-            }
+          # Apply faceting based on the user's choices
+          if (input$facet_isolation & input$facet_growth) {
+            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
+          } else if (input$facet_isolation) {
+            p <- p + facet_grid(cols = vars(Isolation))
+          } else if (input$facet_growth) {
+            p <- p + facet_grid(cols = vars(Growth))
           }
           
-          # Create a data frame for plotting
-          grouped_data <- data.frame(
-            Group = factor(group_names, levels = c("EVs", "Super", "Exomere", "EVp")),
-            Expression = expression_values
-          )
+        } else if (input$grouping == "Grouped") {
+          p <- ggplot(total_data, aes(x = Particle, y = Value)) +
+            geom_pirate(aes(colour = Particle), bars = FALSE,
+                        points_params = list(shape = 19, alpha = 0.2),
+                        lines_params = list(size = 0.8)) +
+            labs(title = paste("Grouped Lipid Expression for", input$lipid))
           
-          # Debugging: Print the structure of grouped_data
-          print(head(grouped_data))
-          
-          # Generate the plot using pirateplot
-          pirateplot(formula = Expression ~ Group, data = grouped_data,
-                     theme = "white", 
-                     pal = c("EVs" = "steelblue", "Super" = "lightcoral", "Exomere" = "mediumseagreen", "EVp" = "goldenrod"),
-                     ylab = "Expression", 
-                     xlab = "Group", 
-                     main = paste("Grouped lipid presence for", input$lipid))
+          # Apply faceting based on the user's choices
+          if (input$facet_isolation & input$facet_growth) {
+            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
+          } else if (input$facet_isolation) {
+            p <- p + facet_grid(cols = vars(Isolation))
+          } else if (input$facet_growth) {
+            p <- p + facet_grid(cols = vars(Growth))
+          }
         }
         
+        print(p)
       } else {
-        ggplot() + labs(title = "No data available for selected lipid species")
+        ggplot() + labs(title = "No data available")
       }
     }
   })
-  
   
   data <- reactive({
     switch(input$dataset,
