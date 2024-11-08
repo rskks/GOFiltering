@@ -1,0 +1,167 @@
+---
+title: "venn"
+author: "rskks"
+date: "2024-10-07"
+output: html_document
+---
+Loading libraries
+```{r}
+library(readxl)
+library(ggVennDiagram)
+library(VennDiagram)
+library(openxlsx)
+library(tidyverse)
+library(ggplot2)
+library(ggupset)
+library(ggridges)
+```
+
+Importing fibroblast datasets
+```{r}
+fibro <- read_xlsx('data/input/samp.xlsx')
+fibro <- as.data.frame(fibro)
+
+# Extract the gene name and set it as row names
+fibro$protein <- gsub(".*GN=([A-Za-z0-9]+) .*", "\\1", fibro$protein)
+rownames(fibro) <- fibro$protein
+
+# Drop the original protein column without resetting row names
+fibro <- subset(fibro, select = -protein)
+```
+
+Subset supermere proteomics from Group Project
+```{r}
+protein_data <- read_csv("./data/input/protein_data_normnoNCB.csv")
+protein_data <- as.data.frame(protein_data, check.names = FALSE)
+rownames(protein_data) <- protein_data$protein
+#remove $protein column
+protein_data <- protein_data[,-1]
+#round up the data keeping only 2 decimal places
+protein_data <- round(protein_data, 2)
+superp <- protein_data[, c(7, 8, 9, 16, 17, 18, 23, 24, 25, 26)]
+```
+
+Merge two dfs
+```{r}
+# Ensure the rownames are set properly
+superp$protein <- rownames(superp)
+fibro$protein <- rownames(fibro)
+
+# Merge the two dataframes by the 'protein' column
+superfibro <- merge(superp, fibro, by = "protein", all = TRUE)
+
+# Set the rownames to be the 'protein' column and remove the 'protein' column
+rownames(superfibro) <- superfibro$protein
+superfibro <- superfibro[, -which(colnames(superfibro) == "protein")]
+
+# 'superfibro' now has 14 columns and all protein names are merged without duplicates
+superfibro[is.na(superfibro)] <- 0
+
+```
+
+Small version 
+
+```{r}
+superfibroxs  <- data.frame(
+  DiFi2DUCSuper = rowMeans(superfibro[, 1:3], na.rm = TRUE),  # Average of columns 1-3
+  DiFi3DUCSuper = rowMeans(superfibro[, 4:6], na.rm = TRUE),  # Average of columns 4-6
+  DiFi_FPLCSuper = rowMeans(superfibro[, 7:10], na.rm = TRUE), # Average of columns 7-10
+  HNPCC_S = superfibro[, 11]  # Column 13 as is
+)
+
+rownames(superfibroxs) <- rownames(superfibro)
+
+# Filter out rows where all values are 0
+superfibroxs[] <- lapply(superfibroxs, function(x) {
+  as.numeric(as.character(x))  # Convert factors or characters to numeric
+})
+superfibroxs_filtered <- superfibroxs[!apply(superfibroxs, 1, function(x) all(x == 0)), ]
+
+# Step 1: Check for rows where all values are effectively zero (accounting for small values)
+zero_rows <- apply(superfibroxs, 1, function(row) {
+  all(abs(row) < .Machine$double.eps)  # Check if all values are close to 0
+})
+
+# Print the number of rows that are all effectively zero
+num_zero_rows <- sum(zero_rows)
+cat("Number of rows where all values are effectively zero:", num_zero_rows, "\n")
+
+# Step 2: Filter out those rows
+superfibroxs_filtered <- superfibroxs[!zero_rows, ]
+
+# Check the structure of the filtered data
+str(superfibroxs_filtered)
+
+# Optionally, display the first few rows of the filtered data frame
+head(superfibroxs_filtered)
+```
+Make a Venn with Venndiagramm
+```{r}
+# Create a list of proteins that are non-zero in each column
+# You can replace the sample column names with actual names if you have them
+sets <- list(
+  DiFi_2D_UC = rownames(superfibroxs_filtered[superfibroxs_filtered[, 1] != 0, ]),
+  DiFi_3D_UC = rownames(superfibroxs_filtered[superfibroxs_filtered[, 2] != 0, ]),
+  DiFi_3D_FPLC = rownames(superfibroxs_filtered[superfibroxs_filtered[, 3] != 0, ]),
+  SAMP = rownames(superfibroxs_filtered[superfibroxs_filtered[, 4] != 0, ])
+)
+
+grpsets <- list(DiFi_2D_UC = rownames(superfibroxs_filtered[superfibroxs_filtered[, 1] != 0, ]),
+  DiFi_3D_UC = rownames(superfibroxs_filtered[superfibroxs_filtered[, 2] != 0, ]),
+  DiFi_3D_FPLC = rownames(superfibroxs_filtered[superfibroxs_filtered[, 3] != 0, ])
+  )
+# Create the Venn diagram
+venn.plot <- venn.diagram(
+  x = sets,
+  category.names = names(sets),  # Custom names for the categories (samples)
+  filename = NULL,                # Set to NULL to plot directly
+  output = TRUE,
+  lwd = 2,                       # Line width
+  col = "black",                 # Line color
+  fill = c("lightblue", "blue", "darkgreen", "yellow"),  # Fill colors for each circle
+  alpha = 0.5,                   # Transparency level
+  cat.cex = 1.5,                 # Size of category names
+  cat.pos = 0,                   # Position of category names
+  cat.dist = 0.05                # Distance of category names from the circles
+)
+
+grid.draw(venn.plot)
+
+```
+
+Searching for a specific protein within the dataset
+```{r}
+# Search for 'DDR1' in each element of the list 'sets'
+result <- sapply(sets, function(x) 'DDR1' %in% x)
+
+# Print the result
+result
+
+```
+Make a venn with ggplot
+
+```{r}
+#Convert the data to a list of vectors
+
+dataset_list <- lapply(superfibroxs, as.vector)
+#Plot basic ggVennDiagram and set the catergory names manually
+
+venn2 <- ggVennDiagram(sets)
+#Save Venn to pdf retaining the dimensions ggsave("DiFi.pdf", plot = venn, device = "pdf", width = 12, height = 10)
+vennS <- ggVennDiagram(sets[1:3])
+#Extract plotting data from venn and write it in Excel file
+write.xlsx(process_region_data(Venn(sets)),file = "venn_proteins_SAMP.xlsx", rowNames = FALSE)
+venn2
+```
+Make an upset plot with ggplot
+
+```{r}
+ggVennDiagram(sets, force_upset = TRUE) -> upset2
+upset2
+```
+
+Dig intersection data
+```{r}
+alls <- overlap(Venn(sets), 1:4)
+alls
+```
