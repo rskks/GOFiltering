@@ -4,8 +4,8 @@ author: "rskks"
 date: "2024-10-07"
 output: html_document
 ---
-Loading libraries
-```{r}
+# Loading libraries
+```{r, message=FALSE}
 library(readxl)
 library(ggVennDiagram)
 library(VennDiagram)
@@ -16,7 +16,7 @@ library(ggupset)
 library(ggridges)
 ```
 
-Importing fibroblast datasets
+# Importing fibroblast datasets
 ```{r}
 fibro <- read_xlsx('data/input/samp.xlsx')
 fibro <- as.data.frame(fibro)
@@ -29,8 +29,8 @@ rownames(fibro) <- fibro$protein
 fibro <- subset(fibro, select = -protein)
 ```
 
-Subset supermere proteomics from Group Project
-```{r}
+# Load and subset supermere proteomics from Group Project
+```{r, message=FALSE}
 protein_data <- read_csv("./data/input/protein_data_normnoNCB.csv")
 protein_data <- as.data.frame(protein_data, check.names = FALSE)
 rownames(protein_data) <- protein_data$protein
@@ -41,7 +41,7 @@ protein_data <- round(protein_data, 2)
 superp <- protein_data[, c(7, 8, 9, 16, 17, 18, 23, 24, 25, 26)]
 ```
 
-Merge two dfs
+# Merge two dfs
 ```{r}
 # Ensure the rownames are set properly
 superp$protein <- rownames(superp)
@@ -59,7 +59,7 @@ superfibro[is.na(superfibro)] <- 0
 
 ```
 
-Small version 
+# Small version 
 
 ```{r}
 superfibroxs  <- data.frame(
@@ -95,7 +95,7 @@ str(superfibroxs_filtered)
 # Optionally, display the first few rows of the filtered data frame
 head(superfibroxs_filtered)
 ```
-Make a Venn with Venndiagramm
+# Make a Venn with Venndiagramm
 ```{r}
 # Create a list of proteins that are non-zero in each column
 # You can replace the sample column names with actual names if you have them
@@ -129,7 +129,7 @@ grid.draw(venn.plot)
 
 ```
 
-Searching for a specific protein within the dataset
+# Searching for a specific protein within the dataset
 ```{r}
 # Search for 'DDR1' in each element of the list 'sets'
 result <- sapply(sets, function(x) 'DDR1' %in% x)
@@ -138,7 +138,7 @@ result <- sapply(sets, function(x) 'DDR1' %in% x)
 result
 
 ```
-Make a venn with ggplot
+# Make a venn with ggplot
 
 ```{r}
 #Convert the data to a list of vectors
@@ -153,15 +153,22 @@ vennS <- ggVennDiagram(sets[1:3])
 write.xlsx(process_region_data(Venn(sets)),file = "venn_proteins_SAMP.xlsx", rowNames = FALSE)
 venn2
 ```
-Make an upset plot with ggplot
+# Make an upset plot with ggplot
 
 ```{r}
 ggVennDiagram(sets, force_upset = TRUE) -> upset2
 upset2
 ```
 
-Dig intersection data
+# Print all 4 set intersection data
+
 ```{r}
 alls <- overlap(Venn(sets), 1:4)
 alls
+```
+
+# Version control / Session info
+
+```{r}
+sessioninfo::session_info()
 ```

@@ -69,6 +69,7 @@ server <- function(input, output, session) {
     }
   })
   
+  # RNA data (unchanged, as it works perfectly)
   rna_data <- reactive({
     file_path <- "mirna_data_avgN.csv"
     cat("Loading data from:", file_path, "\n")  # Debugging output
@@ -76,7 +77,7 @@ server <- function(input, output, session) {
       cat("File exists. Reading the data...\n")
       data <- as.data.frame(read.csv(file_path), check.names = FALSE)
       rownames(data) <- data$rna
-      data <- data[,-1]  # Remove the $miRNA column
+      data <- data[,-1]  # Remove the $rna column
       cat("Data processing complete. Returning data...\n")
       return(data)
     } else {
@@ -84,43 +85,109 @@ server <- function(input, output, session) {
     }
   })
   
+  # Lipid data (updated for consistency)
   lipid_data <- reactive({
-    req(input$dataset == "Lipidomics")  # Ensure 'Lipidomics' is selected
-    req(input$lipidomics_type)  # Ensure 'lipidomics_type' is not NULL
+    req(input$lipidomics_type) # Ensure input exists
     
-    file <- switch(input$lipidomics_type,
-                   "Category" = "/lipid_data_cat.csv",
-                   "Class" = "/lipid_data_cl.csv",
-                   "Subclass" = "/lipid_data_subcl.csv",
-                   "Species" = "/lipid_data_spe.csv",
-                   stop("Invalid lipidomics type selected"))  # Provide a default error if none match
+    file_path <- switch(input$lipidomics_type,
+                        "Category" = "lipid_data_cat.csv",
+                        "Class" = "lipid_data_cl.csv",
+                        "Subclass" = "lipid_data_subcl.csv",
+                        "Species" = "lipid_data_spe.csv")
     
-    read.csv(file)  # Load the CSV based on the selected type
+    if (file.exists(file_path)) {
+      data <- as.data.frame(read.csv(file_path, stringsAsFactors = FALSE))
+      
+      # Debugging output
+      cat("Loaded data from:", file_path, "\n")
+      cat("Column names:\n", colnames(data), "\n")
+      cat("First few rows:\n")
+      print(head(data))
+      
+      if ("lipid" %in% colnames(data)) {
+        rownames(data) <- data$lipid
+        data <- data[,-1]  # Remove the 'lipid' column
+        cat("Row names set successfully.\n")
+      } else {
+        stop("Column 'lipid' not found in the data.")
+      }
+      
+      return(data)
+    } else {
+      showNotification("Selected lipidomics file not found.", type = "error")
+      # Return an empty data frame to avoid issues downstream
+      return(data.frame())
+    }
   })
   
+
   # Dynamic UI rendering for Proteomics, RNA-seq, or Lipidomics (with sub-types for Lipidomics)
   output$dynamicUI <- renderUI({
     if (input$dataset == "Lipidomics") {
+      # Lipidomics-specific UI
       tagList(
         selectInput("lipidomics_type", "Choose Lipidomics Type:",
-                    choices = c("Category", "Class", "Subclass", "Species")),
-        # Adding a condition to ensure lipid selection dropdown is available after type is selected
-        conditionalPanel(
-          condition = "input.lipidomics_type != null",  # Check if a lipidomics type is selected
-          selectizeInput("lipid", "Select Lipid:", 
-                         choices = if (!is.null(lipid_data())) rownames(lipid_data()) else NULL)
-        )
+                    choices = c("Category", "Class", "Subclass", "Species"),
+                    selected = "Category"),
+        selectizeInput("lipid", "Select Lipid:", choices = NULL) # Initially empty
       )
-    } else {
-      # Other dataset types: Proteomics or RNA-seq
-      switch(input$dataset,
-             "Proteomics" = selectizeInput("protein", "Select Protein:", 
-                                           choices = rownames(protein_data())),
-             "RNA-seq" = selectizeInput("rna", "Select miRNA:", 
-                                        choices = rownames(rna_data()))
-      )
+    } else if (input$dataset == "Proteomics") {
+      selectizeInput("protein", "Select Protein:", choices = NULL) # Placeholder
+    } else if (input$dataset == "RNA-seq") {
+      selectizeInput("rna", "Select miRNA:", choices = NULL) # Placeholder
     }
   })
+  
+  # Update lipidomics dropdown when lipidomics_type changes
+  observeEvent(input$lipidomics_type, {
+    req(input$lipidomics_type) # Ensure lipidomics type is selected
+    data <- lipid_data()
+    req(data) # Ensure lipid_data is loaded
+    
+    updateSelectizeInput(session, "lipid", choices = rownames(data), server = TRUE)
+  })
+  
+  # Update proteomics dropdown when protein_data changes
+  observe({
+    data <- protein_data()
+    req(data) # Ensure protein_data is loaded
+    
+    updateSelectizeInput(session, "protein", choices = rownames(data), server = TRUE)
+  })
+  
+  # Update RNA-seq dropdown when rna_data changes
+  observe({
+    data <- rna_data()
+    req(data) # Ensure rna_data is loaded
+    
+    updateSelectizeInput(session, "rna", choices = rownames(data), server = TRUE)
+  })
+  
+  # Observe event to update inputs on dataset switching
+  observeEvent(input$dataset, {
+    # Reset the dropdown menu for proteins
+    if (input$dataset == "Proteomics") {
+      updateSelectInput(session, "protein", 
+                        choices = rownames(protein_data()),
+                        selected = NULL)
+    }
+    
+    # Reset the dropdown menu for RNA
+    if (input$dataset == "RNA-seq") {
+      updateSelectInput(session, "rna", 
+                        choices = rownames(rna_data()),
+                        selected = NULL)
+    }
+    
+    # Reset the dropdown menu for lipids
+    if (input$dataset == "Lipidomics") {
+      lipid_choices <- rownames(lipid_data())
+      updateSelectInput(session, "lipid", 
+                        choices = lipid_choices,
+                        selected = NULL)
+    }
+  })
+  
   
   output$plot <- renderPlot({
     data <- switch(input$dataset,
@@ -351,30 +418,26 @@ server <- function(input, output, session) {
   output$datatable <- renderReactable({
     df <- data()
     
-    if (is.data.frame(df)) {
-      cat("Data is a data frame.\n")
-    } else {
-      cat("Data is not a data frame!\n")
-      str(df)  # Print the structure of the data to see what's wrong
+    if (nrow(df) == 0 || ncol(df) == 0) {
+      cat("Data is empty. Returning a placeholder table.\n")
+      return(reactable(data.frame(Message = "No data available."), 
+                       pagination = FALSE, searchable = FALSE))
     }
     
+    cat("Rendering table with valid data.\n")
     reactable(
       df,
       searchable = TRUE,
-      pagination = TRUE,  # Enables pagination
-      defaultPageSize = 10,  # Default page length
-      pageSizeOptions = c(5, 10, 20),  # Length menu options
+      pagination = TRUE,
+      defaultPageSize = 10,
+      pageSizeOptions = c(5, 10, 20),
       theme = reactable::reactableTheme(
-        headerStyle = list(
-          backgroundColor = '#f5f5f5',
-          color = '#333'
-        ),
-        cellStyle = list(
-          backgroundColor = '#fff'
-        )
+        headerStyle = list(backgroundColor = '#f5f5f5', color = '#333'),
+        cellStyle = list(backgroundColor = '#fff')
       )
     )
   })
+  
 }
 
 # Run the application 
