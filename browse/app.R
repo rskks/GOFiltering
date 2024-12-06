@@ -6,39 +6,76 @@ library(scales)
 library(reactable)
 library(yarrr)
 library(ggpirate)
+library(shinycssloaders)
+library(shinyjs)
 
 # Define UI for application
-ui <- fluidPage(
-  theme = shinytheme("cerulean"),  # Add a theme for better styling
-  titlePanel("EV and NVEP Dataset Explorer"),
-  sidebarLayout(
-    fluid = TRUE,
-    sidebarPanel(
-      width = 3, # Make the sidebar take up 1/3 of the width
+ui <- navbarPage(
+  title = div(
+    style = "font-size: 24px; font-weight: bold;",  # Adjust font size and weight
+    "EV and NVEP Dataset Explorer"
+  ),  # Navbar title
+  theme = shinytheme("cerulean"),         # Use the cerulean theme for styling
+  
+  # Home Tab
+  tabPanel(
+  theme = shinytheme("cerulean"),         # Use the cerulean theme for styling
+    "Home",
+    sidebarLayout(
       fluid = TRUE,
-      
-      selectInput("dataset", "Choose a Dataset:",
-                  choices = c("Proteomics", "RNA-seq", "Lipidomics")),
-      uiOutput("dynamicUI"),
-      selectInput("grouping", "Grouping", choices = c("Individual", "Grouped")),
-      checkboxInput("facet_isolation", "Isolation Method", value = FALSE),
-      checkboxInput("facet_growth", "Growth Conditions", value = FALSE),
-      style = "padding: 20px;"  # Add padding for better layout
-    ),
-    mainPanel(
-      fluidRow(
-        column(12, plotOutput("plot", height = "400px"))  # Adjusted to fit the desired layout
+      sidebarPanel(
+        width = 3,  # Sidebar width
+        fluid = TRUE,
+        
+        radioButtons("dataset", "Choose a Dataset:",
+                    choices = c("Proteomics", "RNA-seq", "Lipidomics"),
+                    inline = TRUE,
+                    selected = "Proteomics",
+                    width = '100%'),  # Adjusted to fit the desired layout
+        uiOutput("dynamicUI"),
+        selectInput("grouping", "Grouping", choices = c("Individual", "Grouped")),
+        checkboxInput("facet_isolation", "Isolation Method", value = FALSE),
+        checkboxInput("facet_growth", "Growth Conditions", value = FALSE),
+        style = "padding: 20px;"  # Add padding for better layout
       ),
-      fluidRow(
-        column(12, reactableOutput("datatable"))
-      ),
-      style = "padding: 20px;"  # Add padding for better layout
+      mainPanel(
+        fluidRow(
+          column(12, withSpinner(plotOutput("plot", height = "400px")))  # Adjusted to fit the desired layout
+        ),
+        fluidRow(
+          column(12, withSpinner(reactableOutput("datatable")))
+        ),
+        style = "padding: 20px;"  # Add padding for better layout
+      )
+    )
+  ),
+  
+  # About Tab
+  tabPanel(
+    "About",
+    fluidPage(
+      h3("About This App"),
+      p("This app is designed to explore EV and NVEP datasets across various data types such as Proteomics, RNA-seq, and Lipidomics."),
+      p("Use the navigation bar to switch between the functionalities of the app.")
+    )
+  ),
+  
+  # Contact Tab
+  tabPanel(
+    "Contact",
+    fluidPage(
+      h3("Contact Us"),
+      p("For any inquiries, please email us at contact@example.com."),
+      p("Alternatively, visit our website for more information.")
     )
   )
 )
 
+
 # Define server logic
 server <- function(input, output, session) {
+  plotOutput("plot") %>% withSpinner(color = "#007FFF")
+  
   # Load the data
   protein_data <- reactive({
     file_path <- "protein_data.csv"
@@ -220,17 +257,20 @@ server <- function(input, output, session) {
         
         print(head(total_data))
         
+        # Plot for "Individual"
         if (input$grouping == "Individual") {
-          # Create the plot
           p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
             geom_point(position = position_jitter(width = 0.1), size = 3) +
-            theme_minimal(base_size = 15) +
-            theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+            theme_grey(base_size = 16) +  # Increase base font size for consistency
+            theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                  axis.title.x = element_text(size = 16),  # Increase x-axis label font size
+                  axis.title.y = element_text(size = 16),  # Increase y-axis label font size
+                  plot.title = element_text(size = 18, face = "bold")) +  # Increase title font size
             labs(y = "Normalized counts",
                  x = NULL,  # Remove the default x-axis label
                  title = paste("Expression of", input$protein)) +
             scale_x_discrete(labels = function(x) {
-              # Create custom labels based on the levels of 'Individual'
+              # Custom labels for the 'Individual' axis
               sapply(x, function(i) {
                 paste(
                   unique(total_data$Particle[total_data$Individual == i]), 
@@ -239,11 +279,9 @@ server <- function(input, output, session) {
                   "", i
                 )
               })
-            }) #+
-          #scale_color_manual(values = c("EVs" = "steelblue", "Group2" = "darkorange"))
+            })
           
-          
-          # Apply faceting based on the user's choices
+          # Apply faceting
           if (input$facet_isolation & input$facet_growth) {
             p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
           } else if (input$facet_isolation) {
@@ -257,9 +295,11 @@ server <- function(input, output, session) {
             geom_pirate(aes(colour = Particle), bars = FALSE,
                         points_params = list(shape = 19, alpha = 0.2),
                         lines_params = list(size = 0.8)) +
+            theme_grey(base_size = 16) +  # Consistent font size
+            theme(plot.title = element_text(size = 18, face = "bold")) +  # Title font size
             labs(title = paste("Grouped Protein Expression for", input$protein))
           
-          # Apply faceting based on the user's choices
+          # Apply faceting
           if (input$facet_isolation & input$facet_growth) {
             p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
           } else if (input$facet_isolation) {
@@ -271,10 +311,13 @@ server <- function(input, output, session) {
         
         print(p)
       } else {
-        ggplot() + labs(title = "No data available for selected protein")
+        ggplot() + labs(title = "No data available for selected protein") +
+          theme_grey(base_size = 16) + theme(plot.title = element_text(size = 18, face = "bold"))
       }
-      
-    } else if (input$dataset == "RNA-seq") {
+    }
+    
+    # Similar font adjustments for RNA-seq section:
+    else if (input$dataset == "RNA-seq") {
       if (!is.null(input$rna) && input$rna %in% rownames(data)) {
         if (input$grouping == "Individual") {
           data_to_plot <- as.data.frame(t(data[rownames(data) == input$rna, ]))
@@ -285,10 +328,14 @@ server <- function(input, output, session) {
           
           ggplot(data_to_plot, aes(x = Condition, y = Expression)) +
             geom_point(color = "steelblue", size = 4) +
-            theme_minimal(base_size = 15) +
-            theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+            theme_grey(base_size = 16) +  # Consistent font size
+            theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                  axis.title.x = element_text(size = 16),  # x-axis label size
+                  axis.title.y = element_text(size = 16),  # y-axis label size
+                  plot.title = element_text(size = 18, face = "bold")) +  # title size
             labs(title = paste("Expression of", input$rna)) +
             scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
+          
         } else if (input$grouping == "Grouped") {
           group1 <- c("EV3D")
           group2 <- c("Super2D", "Super3D", "SuperFPLC")
@@ -323,9 +370,10 @@ server <- function(input, output, session) {
                      main = paste("Grouped miRNA Expression for", input$rna))
         }
       } else {
-        ggplot() + labs(title = "No data available for selected miRNA")
+        ggplot() + labs(title = "No data available for selected miRNA") +
+          theme_grey(base_size = 16) + theme(plot.title = element_text(size = 18, face = "bold"))
       }
-      
+    
     } else if (input$dataset == "Lipidomics") {
       if (!is.null(input$lipid) && input$lipid %in% rownames(data)) {
         selected_protein_data <- data[input$lipid, , drop = FALSE]
@@ -355,7 +403,7 @@ server <- function(input, output, session) {
           # Create the plot
           p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
             geom_point(position = position_jitter(width = 0.1), size = 3) +
-            theme_minimal(base_size = 15) +
+            theme_grey(base_size = 15) +
             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
             labs(y = "Normalized counts",
                  x = NULL,  # Remove the default x-axis label
@@ -427,17 +475,21 @@ server <- function(input, output, session) {
     cat("Rendering table with valid data.\n")
     reactable(
       df,
+      defaultColDef = colDef(format = colFormat(digits = 2)),
       searchable = TRUE,
+      highlight = TRUE,
       pagination = TRUE,
+      resizable = TRUE,
+      wrap = FALSE,
       defaultPageSize = 10,
       pageSizeOptions = c(5, 10, 20),
       theme = reactable::reactableTheme(
         headerStyle = list(backgroundColor = '#f5f5f5', color = '#333'),
-        cellStyle = list(backgroundColor = '#fff')
+        cellStyle = list(backgroundColor = '#fff'),
+        highlightColor = '#007ba7'
       )
     )
   })
-  
 }
 
 # Run the application 
