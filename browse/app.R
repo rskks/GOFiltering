@@ -8,6 +8,7 @@ library(yarrr)
 library(ggpirate)
 library(shinycssloaders)
 library(shinyjs)
+library(shinyThings)
 
 # Define UI for application
 ui <- navbarPage(
@@ -27,13 +28,14 @@ ui <- navbarPage(
         width = 3,  # Sidebar width
         fluid = TRUE,
         
-        radioButtons("dataset", "Choose a Dataset:",
+        shinyThings::radioSwitchButtons("dataset", "Choose a Dataset:",
                     choices = c("Proteomics", "RNA-seq", "Lipidomics"),
-                    inline = TRUE,
-                    selected = "Proteomics",
-                    width = '100%'),  # Adjusted to fit the desired layout
+                    #inline = TRUE,
+                    selected = "Proteomics"),  # Adjusted to fit the desired layout
         uiOutput("dynamicUI"),
-        selectInput("grouping", "Grouping", choices = c("Individual", "Grouped")),
+        shinyThings::radioSwitchButtons("grouping", "Sample grouping:", 
+                    choices = c("Individual", "Grouped"),
+                    selected = "Grouped"),
         checkboxInput("facet_isolation", "Isolation Method", value = FALSE),
         checkboxInput("facet_growth", "Growth Conditions", value = FALSE),
         style = "padding: 20px;"  # Add padding for better layout
@@ -75,6 +77,9 @@ ui <- navbarPage(
 # Define server logic
 server <- function(input, output, session) {
   plotOutput("plot") %>% withSpinner(color = "#007FFF")
+  shinyThings::updateRadioSwitchButtons(session = session, 
+                                        inputId = "dataset",
+                                        selected = "Proteomics")
   
   # Load the data
   protein_data <- reactive({
