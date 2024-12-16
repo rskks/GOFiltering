@@ -1,7 +1,7 @@
 library(shiny)
 library(ggplot2)
 library(DT)
-library(shinythemes)  # For themes
+library(shinythemes)
 library(scales)
 library(reactable)
 library(yarrr)
@@ -13,27 +13,26 @@ library(shinyThings)
 # Define UI for application
 ui <- navbarPage(
   title = div(
-    style = "font-size: 24px; font-weight: bold;",  # Adjust font size and weight
-    "EV and NVEP Dataset Explorer"
+    style = "font-size: 20px; font-weight: bold;",  # Adjust font size and weight
+    "SUPEROMICS: Supermere, Extracellular Vesicle, and Exomere Omics Explorer"
   ),  # Navbar title
-  theme = shinytheme("cerulean"),         # Use the cerulean theme for styling
+  theme = shinytheme("cerulean"),         
   
-  # Home Tab
+  # Home Tab 
   tabPanel(
-  theme = shinytheme("cerulean"),         # Use the cerulean theme for styling
+  theme = shinytheme("cerulean"),         
     "Home",
     sidebarLayout(
       fluid = TRUE,
       sidebarPanel(
-        width = 3,  # Sidebar width
+        width = 3,  
         fluid = TRUE,
-        
         shinyThings::radioSwitchButtons("dataset", "Choose a Dataset:",
                     choices = c("Proteomics", "RNA-seq", "Lipidomics"),
                     #inline = TRUE,
-                    selected = "Proteomics"),  # Adjusted to fit the desired layout
+                    selected = "Proteomics"), 
         uiOutput("dynamicUI"),
-        shinyThings::radioSwitchButtons("grouping", "Sample grouping:", 
+        shinyThings::radioSwitchButtons("grouping", "Sample Grouping:", 
                     choices = c("Individual", "Grouped"),
                     selected = "Grouped"),
         checkboxInput("facet_isolation", "Isolation Method", value = FALSE),
@@ -42,12 +41,12 @@ ui <- navbarPage(
       ),
       mainPanel(
         fluidRow(
-          column(12, withSpinner(plotOutput("plot", height = "400px")))  # Adjusted to fit the desired layout
+          column(12, withSpinner(plotOutput("plot", height = "400px")))  
         ),
         fluidRow(
           column(12, withSpinner(reactableOutput("datatable")))
         ),
-        style = "padding: 20px;"  # Add padding for better layout
+        style = "padding: 20px;"  
       )
     )
   ),
@@ -57,8 +56,31 @@ ui <- navbarPage(
     "About",
     fluidPage(
       h3("About This App"),
-      p("This app is designed to explore EV and NVEP datasets across various data types such as Proteomics, RNA-seq, and Lipidomics."),
-      p("Use the navigation bar to switch between the functionalities of the app.")
+      div(
+        p("This app was developed to accompany the publication ", 
+          tags$em("'A comprehensive analysis of nanoparticle isolation and cargo in colorectal cancer'"), 
+          " [DOI:XXXXXXXX]."),
+        p("It provides an interactive platform to explore EV and NVEP Omics datasets generated from DiFi cells across various data types, including:"),
+        tags$ul(
+          tags$li(tags$b("Proteomics:"), " Supports searching for individual proteins using Gene Name nomenclature. Data is reported as log2-normalized counts."),
+          tags$li(tags$b("RNA-seq:"), " Provides an overview of all host genome small RNA types (sRNA type) and browsing expression for each individual sRNA by type (e.g., miRNA, lncRNA, snRNA). Data is reported as reads per million total reads."),
+          tags$li(tags$b("Lipidomics:"), " Enables an overview of all lipids categorized by Category, Class, Subclass, or Species. Data is reported as log2-normalized counts.")
+        )
+      ),
+      div(
+        h4("Features:"),
+        tags$ul(
+          tags$li(tags$b("Sample Grouping:"), " Choose 'Individual' for sample-level dot plots or 'Grouped' for pirate plots aggregated by particle type."),
+          tags$li(tags$b("Faceting Options:"), " Customize plots by Isolation Method (UC vs FPLC) and Growth Conditions (2D vs 3D).")
+        )
+      ),
+      div(
+        h4("Resources:"),
+        tags$ul(
+          tags$li("Refer to the publication for detailed explanations on methods used for data acquisition and preprocessing."),
+          tags$li("Access the source code and datasets on ", tags$a(href = "https://github.com", "GitHub"), ".")
+        )
+      )
     )
   ),
   
@@ -67,12 +89,12 @@ ui <- navbarPage(
     "Contact",
     fluidPage(
       h3("Contact Us"),
-      p("For any inquiries, please email us at contact@example.com."),
-      p("Alternatively, visit our website for more information.")
+      p("Please refer to the original ", tags$a(href = "https://github.com", "publication"), " for the corresponding author's contact information."),
+      p("If you have questions or suggestions about the website, you can email ", tags$a(href = "mailto:ostutanov@gmail.com", "Oleg Tutanov"), ".")
     )
   )
 )
-
+  
 
 # Define server logic
 server <- function(input, output, session) {
@@ -84,7 +106,7 @@ server <- function(input, output, session) {
   # Load the data
   protein_data <- reactive({
     file_path <- "protein_data.csv"
-    cat("Loading data from:", file_path, "\n")  # Debugging output
+     cat("Loading data from:", file_path, "\n")  # Debugging output
     if (file.exists(file_path)) {
       cat("File exists. Reading the data...\n")
       data <- read.csv(file_path)
@@ -92,6 +114,24 @@ server <- function(input, output, session) {
       data <- as.data.frame(data, check.names = FALSE)
       rownames(data) <- data$protein
       data <- data[,-1]  # Remove the $protein column
+      
+      # Convert columns to numeric and log non-numeric values
+      for (col in names(data)) {
+        suppressWarnings({
+          numeric_values <- as.numeric(data[[col]])
+          non_numeric_indices <- which(is.na(numeric_values))  # Identify problematic rows
+          
+          if (length(non_numeric_indices) > 0) {
+            cat("Non-numeric values found in column '", col, "' at rows: ", 
+                paste(non_numeric_indices, collapse = ", "), "\n", sep = "")
+          }
+          
+          # Replace non-numeric values with 0
+          numeric_values[is.na(numeric_values)] <- 0
+          data[[col]] <- numeric_values
+        })
+      }
+      
       data <- round(data, 2)  # Round data to 2 decimal places
       cat("Data processing complete. Returning data...\n")
       return(data)
@@ -111,19 +151,53 @@ server <- function(input, output, session) {
     }
   })
   
-  # RNA data (unchanged, as it works perfectly)
+  # RNA-seq data (updated for consistency)
   rna_data <- reactive({
-    file_path <- "mirna_data_avgN.csv"
-    cat("Loading data from:", file_path, "\n")  # Debugging output
+    req(input$rnaseq_type) # Ensure input exists
+    
+    # Map input to file paths
+    file_path <- switch(input$rnaseq_type,
+                        "sRNA type" = "rna_data_cat.csv",
+                        "miRNA" = "rna_data_mirna.csv",
+                        "lncRNA" = "rna_data_lncrna.csv",
+                        "snRNA" = "rna_data_snrna.csv",
+                        "tRNA" = "rna_data_trna.csv",
+                        "snoRNA" = "rna_data_snorna.csv",
+                        "rRNA" = "rna_data_rrna.csv",
+                        "yRNA" = "rna_data_yrna.csv"
+                        )
+    
     if (file.exists(file_path)) {
-      cat("File exists. Reading the data...\n")
-      data <- as.data.frame(read.csv(file_path), check.names = FALSE)
-      rownames(data) <- data$rna
-      data <- data[,-1]  # Remove the $rna column
-      cat("Data processing complete. Returning data...\n")
+      data <- as.data.frame(read.csv(file_path, stringsAsFactors = FALSE))
+      
+      # Debugging output
+      cat("Loaded data from:", file_path, "\n")
+      #cat("Column names:\n", colnames(data), "\n")
+      #cat("First few rows:\n")
+      #print(head(data))
+      
+      # Conditional logic for row name processing
+      if ("rna" %in% colnames(data)) {
+        if (input$rnaseq_type != "lncRNA") {
+          # Process row names (skip for lncRNA)
+          data$rna <- gsub("[|:;].*", "", data$rna)
+          rownames(data) <- make.unique(data$rna)  # Ensure unique row names
+          data <- data[, -1]  # Remove the 'rna' column
+          cat("Row names set successfully.\n")
+        } else {
+          cat("Skipping row name processing for lncRNA.\n")
+          rownames(data) <- make.unique(data$rna)  # Ensure unique row names
+          data <- data[, -1]  # Remove the 'rna' column
+        }
+      } else {
+        stop("Column 'rna' not found in the data.")
+      }
+      
       return(data)
     } else {
-      stop("File not found: ", file_path)
+      showNotification("Selected RNA-seq file not found.", type = "error")
+      # Return an empty data frame to avoid issues downstream
+      return(data.frame())
     }
   })
   
@@ -142,9 +216,9 @@ server <- function(input, output, session) {
       
       # Debugging output
       cat("Loaded data from:", file_path, "\n")
-      cat("Column names:\n", colnames(data), "\n")
-      cat("First few rows:\n")
-      print(head(data))
+      #cat("Column names:\n", colnames(data), "\n")
+      #cat("First few rows:\n")
+      #print(head(data))
       
       if ("lipid" %in% colnames(data)) {
         rownames(data) <- data$lipid
@@ -176,7 +250,13 @@ server <- function(input, output, session) {
     } else if (input$dataset == "Proteomics") {
       selectizeInput("protein", "Select Protein:", choices = NULL) # Placeholder
     } else if (input$dataset == "RNA-seq") {
-      selectizeInput("rna", "Select miRNA:", choices = NULL) # Placeholder
+      # RNAseq-specific UI
+      tagList(
+        selectInput("rnaseq_type", "Choose RNAseq Dataset:",
+                    choices = c("sRNA type", "miRNA", "lncRNA", "snRNA", "tRNA", "snoRNA", "rRNA", "yRNA"),
+                    selected = "sRNA type"),
+        selectizeInput("rna", "Select RNA:", choices = NULL) # Placeholder
+      )
     }
   })
   
@@ -230,7 +310,6 @@ server <- function(input, output, session) {
     }
   })
   
-  
   output$plot <- renderPlot({
     data <- switch(input$dataset,
                    "Proteomics" = protein_data(),
@@ -260,7 +339,7 @@ server <- function(input, output, session) {
           Growth = factor(growth_data)
         )
         
-        print(head(total_data))
+        #print(head(total_data))
         
         # Plot for "Individual"
         if (input$grouping == "Individual") {
@@ -301,7 +380,9 @@ server <- function(input, output, session) {
                         points_params = list(shape = 19, alpha = 0.2),
                         lines_params = list(size = 0.8)) +
             theme_grey(base_size = 16) +  # Consistent font size
-            theme(plot.title = element_text(size = 18, face = "bold")) +  # Title font size
+            theme(axis.title.x = element_text(size = 16),  # Increase x-axis label font size
+                  axis.title.y = element_text(size = 16),  # Increase y-axis label font size +  
+                  plot.title = element_text(size = 18, face = "bold")) + # Title font size
             labs(title = paste("Grouped Protein Expression for", input$protein))
           
           # Apply faceting
@@ -324,61 +405,82 @@ server <- function(input, output, session) {
     # Similar font adjustments for RNA-seq section:
     else if (input$dataset == "RNA-seq") {
       if (!is.null(input$rna) && input$rna %in% rownames(data)) {
+        selected_protein_data <- data[input$rna, , drop = FALSE]
+        grouping <- input$grouping
+        plot_type <- ifelse(grouping == "Individual", "dotplot", "pirateplot")
+        
+        # Get the meta information for faceting
+        meta_data <- protein_meta()
+        
+        individual_data <- as.vector(unlist(meta_data["Individual", colnames(selected_protein_data)]))
+        partile_data <- as.vector(unlist(meta_data["Particle", colnames(selected_protein_data)]))
+        isolation_data <- as.vector(unlist(meta_data["Isolation", colnames(selected_protein_data)]))
+        growth_data <- as.vector(unlist(meta_data["Growth", colnames(selected_protein_data)]))
+        
+        total_data <- data.frame(
+          Condition = colnames(selected_protein_data),
+          Value = as.numeric(selected_protein_data),
+          Individual = factor(individual_data),
+          Particle = factor(partile_data),
+          Isolation = factor(isolation_data),
+          Growth = factor(growth_data)
+        )
+        
+        #print(head(total_data))
+        
         if (input$grouping == "Individual") {
-          data_to_plot <- as.data.frame(t(data[rownames(data) == input$rna, ]))
-          colnames(data_to_plot) <- "Expression"
-          data_to_plot$Condition <- rownames(data_to_plot)
+          # Create the plot
+          p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
+            geom_point(position = position_jitter(width = 0.1), size = 3) +
+            theme_grey(base_size = 15) +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+            labs(y = "Normalized counts",
+                 x = NULL,  # Remove the default x-axis label
+                 title = paste("Expression of", input$rna)) +
+            scale_x_discrete(labels = function(x) {
+              # Create custom labels based on the levels of 'Individual'
+              sapply(x, function(i) {
+                paste(
+                  unique(total_data$Particle[total_data$Individual == i]), 
+                  "", unique(total_data$Isolation[total_data$Individual == i]), 
+                  "", unique(total_data$Growth[total_data$Individual == i]), 
+                  "", i
+                )
+              })
+            }) #+
+          #scale_color_manual(values = c("EVs" = "steelblue", "Group2" = "darkorange"))
           
-          print(head(data_to_plot))
           
-          ggplot(data_to_plot, aes(x = Condition, y = Expression)) +
-            geom_point(color = "steelblue", size = 4) +
-            theme_grey(base_size = 16) +  # Consistent font size
-            theme(axis.text.x = element_text(angle = 45, hjust = 1),
-                  axis.title.x = element_text(size = 16),  # x-axis label size
-                  axis.title.y = element_text(size = 16),  # y-axis label size
-                  plot.title = element_text(size = 18, face = "bold")) +  # title size
-            labs(title = paste("Expression of", input$rna)) +
-            scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
-          
-        } else if (input$grouping == "Grouped") {
-          group1 <- c("EV3D")
-          group2 <- c("Super2D", "Super3D", "SuperFPLC")
-          group3 <- c("Exomere2D", "Exomere3D", "ExomereFPLC")
-          group4 <- c("EVP2D", "EVP3D")
-          
-          groups <- list(EVs = group1, Super = group2, Exomere = group3, EVp = group4)
-          rna_data_subset <- data[input$rna, , drop = FALSE]
-          
-          group_names <- c()
-          expression_values <- c()
-          
-          for (group_name in names(groups)) {
-            group_cols <- groups[[group_name]]
-            valid_cols <- intersect(group_cols, colnames(rna_data_subset))
-            if (length(valid_cols) > 0) {
-              group_names <- c(group_names, rep(group_name, length(valid_cols)))
-              expression_values <- c(expression_values, as.vector(t(rna_data_subset[, valid_cols])))
-            }
+          # Apply faceting based on the user's choices
+          if (input$facet_isolation & input$facet_growth) {
+            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
+          } else if (input$facet_isolation) {
+            p <- p + facet_grid(cols = vars(Isolation))
+          } else if (input$facet_growth) {
+            p <- p + facet_grid(cols = vars(Growth))
           }
           
-          grouped_data <- data.frame(
-            Group = factor(group_names, levels = c("EVs", "Super", "Exomere", "EVp")),
-            Expression = expression_values
-          )
+        } else if (input$grouping == "Grouped") {
+          p <- ggplot(total_data, aes(x = Particle, y = Value)) +
+            geom_pirate(aes(colour = Particle), bars = FALSE,
+                        points_params = list(shape = 19, alpha = 0.2),
+                        lines_params = list(size = 0.8)) +
+            labs(title = paste("Grouped Lipid Expression for", input$rna))
           
-          pirateplot(formula = Expression ~ Group, data = grouped_data,
-                     theme = "white", 
-                     pal = c("EVs" = "steelblue", "Super" = "lightcoral", "Exomere" = "mediumseagreen", "EVp" = "goldenrod"),
-                     ylab = "Reads per million total reads", 
-                     xlab = "Group", 
-                     main = paste("Grouped miRNA Expression for", input$rna))
+          # Apply faceting based on the user's choices
+          if (input$facet_isolation & input$facet_growth) {
+            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
+          } else if (input$facet_isolation) {
+            p <- p + facet_grid(cols = vars(Isolation))
+          } else if (input$facet_growth) {
+            p <- p + facet_grid(cols = vars(Growth))
+          }
         }
+        
+        print(p)
       } else {
-        ggplot() + labs(title = "No data available for selected miRNA") +
-          theme_grey(base_size = 16) + theme(plot.title = element_text(size = 18, face = "bold"))
+        ggplot() + labs(title = "No data available")
       }
-    
     } else if (input$dataset == "Lipidomics") {
       if (!is.null(input$lipid) && input$lipid %in% rownames(data)) {
         selected_protein_data <- data[input$lipid, , drop = FALSE]
@@ -402,7 +504,7 @@ server <- function(input, output, session) {
           Growth = factor(growth_data)
         )
         
-        print(head(total_data))
+        #print(head(total_data))
         
         if (input$grouping == "Individual") {
           # Create the plot
