@@ -27,7 +27,7 @@ ui <- navbarPage(
       sidebarPanel(
         width = 3,  
         fluid = TRUE,
-        shinyThings::radioSwitchButtons("dataset", "Choose a Dataset:",
+        shinyThings::radioSwitchButtons("dataset", "Dataset:",
                     choices = c("Proteomics", "RNA-seq", "Lipidomics"),
                     #inline = TRUE,
                     selected = "Proteomics"), 
@@ -35,8 +35,13 @@ ui <- navbarPage(
         shinyThings::radioSwitchButtons("grouping", "Sample Grouping:", 
                     choices = c("Individual", "Grouped"),
                     selected = "Grouped"),
+        div(
+          style = "margin-top: 8px; font-weight: bold; font-size: 14px;",
+          "Plot Faceting:"
+        ),
         checkboxInput("facet_isolation", "Isolation Method", value = FALSE),
         checkboxInput("facet_growth", "Growth Conditions", value = FALSE),
+        downloadButton("downloadPlot", "Download Plot"),
         style = "padding: 20px;"  # Add padding for better layout
       ),
       mainPanel(
@@ -78,7 +83,7 @@ ui <- navbarPage(
         h4("Resources:"),
         tags$ul(
           tags$li("Refer to the publication for detailed explanations on methods used for data acquisition and preprocessing."),
-          tags$li("Access the source code and datasets on ", tags$a(href = "https://github.com", "GitHub"), ".")
+          tags$li("Access the source code and datasets on ", tags$a(href = "https://github.com/rskks/GOFiltering/tree/main/browse", "GitHub"), ".")
         )
       )
     )
@@ -242,20 +247,20 @@ server <- function(input, output, session) {
     if (input$dataset == "Lipidomics") {
       # Lipidomics-specific UI
       tagList(
-        selectInput("lipidomics_type", "Choose Lipidomics Type:",
+        selectInput("lipidomics_type", "Lipidomics Type:",
                     choices = c("Category", "Class", "Subclass", "Species"),
                     selected = "Category"),
-        selectizeInput("lipid", "Select Lipid:", choices = NULL) # Initially empty
+        selectizeInput("lipid", "Lipid:", choices = NULL) # Initially empty
       )
     } else if (input$dataset == "Proteomics") {
-      selectizeInput("protein", "Select Protein:", choices = NULL) # Placeholder
+      selectizeInput("protein", "Protein:", choices = NULL) # Placeholder
     } else if (input$dataset == "RNA-seq") {
       # RNAseq-specific UI
       tagList(
-        selectInput("rnaseq_type", "Choose RNAseq Dataset:",
+        selectInput("rnaseq_type", "RNAseq Dataset:",
                     choices = c("sRNA type", "miRNA", "lncRNA", "snRNA", "tRNA", "snoRNA", "rRNA", "yRNA"),
                     selected = "sRNA type"),
-        selectizeInput("rna", "Select RNA:", choices = NULL) # Placeholder
+        selectizeInput("rna", "RNA:", choices = NULL) # Placeholder
       )
     }
   })
@@ -310,257 +315,122 @@ server <- function(input, output, session) {
     }
   })
   
-  output$plot <- renderPlot({
+  custom_theme <- theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 13),  # X-axis tick labels
+    axis.text.y = element_text(size = 13),  # Y-axis tick labels
+    axis.title.x = element_text(size = 17),  # X-axis label font size
+    axis.title.y = element_text(size = 13),  # Y-axis label font size
+    plot.title = element_text(size = 19, face = "bold"),  # Title font size
+    strip.text = element_text(size = 15, face = "bold"),  # Facet labels font size
+    legend.text = element_text(size = 14),  # Legend text size
+    legend.title = element_text(size = 15, face = "bold")  # Legend title font size
+  )
+  
+  
+  
+  apply_faceting <- function(plot, input) {
+    if (input$facet_isolation & input$facet_growth) {
+      plot + facet_grid(rows = vars(Isolation), cols = vars(Growth))
+    } else if (input$facet_isolation) {
+      plot + facet_grid(cols = vars(Isolation))
+    } else if (input$facet_growth) {
+      plot + facet_grid(cols = vars(Growth))
+    } else {
+      plot
+    }
+  }
+  
+  prepare_total_data <- function(data, meta_data) {
+    data.frame(
+      Condition = colnames(data),
+      Value = as.numeric(data),
+      Individual = factor(unlist(meta_data["Individual", colnames(data)])),
+      Particle = factor(unlist(meta_data["Particle", colnames(data)])),
+      Isolation = factor(unlist(meta_data["Isolation", colnames(data)])),
+      Growth = factor(unlist(meta_data["Growth", colnames(data)]))
+    )
+  }
+  
+  custom_labels <- function(total_data) {
+    function(x) {
+      sapply(x, function(i) {
+        paste(
+          unique(total_data$Particle[total_data$Individual == i]), 
+          unique(total_data$Isolation[total_data$Individual == i]), 
+          unique(total_data$Growth[total_data$Individual == i]), 
+          i
+        )
+      })
+    }
+  }
+  
+  # Reactive plot generation
+  plot_reactive <- reactive({
     data <- switch(input$dataset,
                    "Proteomics" = protein_data(),
                    "RNA-seq" = rna_data(),
                    "Lipidomics" = lipid_data())
     
-    if (input$dataset == "Proteomics") {
-      if (!is.null(input$protein) && input$protein %in% rownames(data)) {
-        selected_protein_data <- data[input$protein, , drop = FALSE]
-        grouping <- input$grouping
-        plot_type <- ifelse(grouping == "Individual", "dotplot", "pirateplot")
-        
-        # Get the meta information for faceting
-        meta_data <- protein_meta()
-        
-        individual_data <- as.vector(unlist(meta_data["Individual", colnames(selected_protein_data)]))
-        partile_data <- as.vector(unlist(meta_data["Particle", colnames(selected_protein_data)]))
-        isolation_data <- as.vector(unlist(meta_data["Isolation", colnames(selected_protein_data)]))
-        growth_data <- as.vector(unlist(meta_data["Growth", colnames(selected_protein_data)]))
-        
-        total_data <- data.frame(
-          Condition = colnames(selected_protein_data),
-          Value = as.numeric(selected_protein_data),
-          Individual = factor(individual_data),
-          Particle = factor(partile_data),
-          Isolation = factor(isolation_data),
-          Growth = factor(growth_data)
-        )
-        
-        #print(head(total_data))
-        
-        # Plot for "Individual"
-        if (input$grouping == "Individual") {
-          p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
-            geom_point(position = position_jitter(width = 0.1), size = 3) +
-            theme_grey(base_size = 16) +  # Increase base font size for consistency
-            theme(axis.text.x = element_text(angle = 45, hjust = 1),
-                  axis.title.x = element_text(size = 16),  # Increase x-axis label font size
-                  axis.title.y = element_text(size = 16),  # Increase y-axis label font size
-                  plot.title = element_text(size = 18, face = "bold")) +  # Increase title font size
-            labs(y = "Normalized counts",
-                 x = NULL,  # Remove the default x-axis label
-                 title = paste("Expression of", input$protein)) +
-            scale_x_discrete(labels = function(x) {
-              # Custom labels for the 'Individual' axis
-              sapply(x, function(i) {
-                paste(
-                  unique(total_data$Particle[total_data$Individual == i]), 
-                  "", unique(total_data$Isolation[total_data$Individual == i]), 
-                  "", unique(total_data$Growth[total_data$Individual == i]), 
-                  "", i
-                )
-              })
-            })
-          
-          # Apply faceting
-          if (input$facet_isolation & input$facet_growth) {
-            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
-          } else if (input$facet_isolation) {
-            p <- p + facet_grid(cols = vars(Isolation))
-          } else if (input$facet_growth) {
-            p <- p + facet_grid(cols = vars(Growth))
-          }
-          
-        } else if (input$grouping == "Grouped") {
-          p <- ggplot(total_data, aes(x = Particle, y = Value)) +
-            geom_pirate(aes(colour = Particle), bars = FALSE,
-                        points_params = list(shape = 19, alpha = 0.2),
-                        lines_params = list(size = 0.8)) +
-            theme_grey(base_size = 16) +  # Consistent font size
-            theme(axis.title.x = element_text(size = 16),  # Increase x-axis label font size
-                  axis.title.y = element_text(size = 16),  # Increase y-axis label font size +  
-                  plot.title = element_text(size = 18, face = "bold")) + # Title font size
-            labs(title = paste("Grouped Protein Expression for", input$protein))
-          
-          # Apply faceting
-          if (input$facet_isolation & input$facet_growth) {
-            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
-          } else if (input$facet_isolation) {
-            p <- p + facet_grid(cols = vars(Isolation))
-          } else if (input$facet_growth) {
-            p <- p + facet_grid(cols = vars(Growth))
-          }
-        }
-        
-        print(p)
-      } else {
-        ggplot() + labs(title = "No data available for selected protein") +
-          theme_grey(base_size = 16) + theme(plot.title = element_text(size = 18, face = "bold"))
-      }
-    }
+    target_input <- switch(input$dataset,
+                           "Proteomics" = input$protein,
+                           "RNA-seq" = input$rna,
+                           "Lipidomics" = input$lipid)
     
-    # Similar font adjustments for RNA-seq section:
-    else if (input$dataset == "RNA-seq") {
-      if (!is.null(input$rna) && input$rna %in% rownames(data)) {
-        selected_protein_data <- data[input$rna, , drop = FALSE]
-        grouping <- input$grouping
-        plot_type <- ifelse(grouping == "Individual", "dotplot", "pirateplot")
-        
-        # Get the meta information for faceting
-        meta_data <- protein_meta()
-        
-        individual_data <- as.vector(unlist(meta_data["Individual", colnames(selected_protein_data)]))
-        partile_data <- as.vector(unlist(meta_data["Particle", colnames(selected_protein_data)]))
-        isolation_data <- as.vector(unlist(meta_data["Isolation", colnames(selected_protein_data)]))
-        growth_data <- as.vector(unlist(meta_data["Growth", colnames(selected_protein_data)]))
-        
-        total_data <- data.frame(
-          Condition = colnames(selected_protein_data),
-          Value = as.numeric(selected_protein_data),
-          Individual = factor(individual_data),
-          Particle = factor(partile_data),
-          Isolation = factor(isolation_data),
-          Growth = factor(growth_data)
-        )
-        
-        #print(head(total_data))
-        
-        if (input$grouping == "Individual") {
-          # Create the plot
-          p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
-            geom_point(position = position_jitter(width = 0.1), size = 3) +
-            theme_grey(base_size = 15) +
-            theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-            labs(y = "Normalized counts",
-                 x = NULL,  # Remove the default x-axis label
-                 title = paste("Expression of", input$rna)) +
-            scale_x_discrete(labels = function(x) {
-              # Create custom labels based on the levels of 'Individual'
-              sapply(x, function(i) {
-                paste(
-                  unique(total_data$Particle[total_data$Individual == i]), 
-                  "", unique(total_data$Isolation[total_data$Individual == i]), 
-                  "", unique(total_data$Growth[total_data$Individual == i]), 
-                  "", i
-                )
-              })
-            }) #+
-          #scale_color_manual(values = c("EVs" = "steelblue", "Group2" = "darkorange"))
-          
-          
-          # Apply faceting based on the user's choices
-          if (input$facet_isolation & input$facet_growth) {
-            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
-          } else if (input$facet_isolation) {
-            p <- p + facet_grid(cols = vars(Isolation))
-          } else if (input$facet_growth) {
-            p <- p + facet_grid(cols = vars(Growth))
-          }
-          
-        } else if (input$grouping == "Grouped") {
-          p <- ggplot(total_data, aes(x = Particle, y = Value)) +
-            geom_pirate(aes(colour = Particle), bars = FALSE,
-                        points_params = list(shape = 19, alpha = 0.2),
-                        lines_params = list(size = 0.8)) +
-            labs(title = paste("Grouped Lipid Expression for", input$rna))
-          
-          # Apply faceting based on the user's choices
-          if (input$facet_isolation & input$facet_growth) {
-            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
-          } else if (input$facet_isolation) {
-            p <- p + facet_grid(cols = vars(Isolation))
-          } else if (input$facet_growth) {
-            p <- p + facet_grid(cols = vars(Growth))
-          }
-        }
-        
-        print(p)
+    y_label <- switch(input$dataset,
+                      "Proteomics" = "log-2 normalized counts",
+                      "RNA-seq" = "reads per million total reads",
+                      "Lipidomics" = "log-2 normalized counts")
+    
+    if (!is.null(target_input) && target_input %in% rownames(data)) {
+      selected_data <- data[target_input, , drop = FALSE]
+      meta_data <- protein_meta()
+      total_data <- prepare_total_data(selected_data, meta_data)
+      
+      if (input$grouping == "Individual") {
+        p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
+          geom_point(position = position_jitter(width = 0.1), size = 3) +
+          labs(
+            y = y_label,
+            x = NULL,
+            title = paste("Expression of", target_input)
+          ) +
+          scale_x_discrete(labels = custom_labels(total_data)) +
+          custom_theme
       } else {
-        ggplot() + labs(title = "No data available")
+        p <- ggplot(total_data, aes(x = Particle, y = Value)) +
+          geom_pirate(aes(colour = Particle), bars = FALSE,
+                      points_params = list(shape = 19, alpha = 0.2),
+                      lines_params = list(size = 0.8)) +
+          labs(
+            y = y_label,
+            title = paste("Grouped Expression for", target_input)) +
+          custom_theme
       }
-    } else if (input$dataset == "Lipidomics") {
-      if (!is.null(input$lipid) && input$lipid %in% rownames(data)) {
-        selected_protein_data <- data[input$lipid, , drop = FALSE]
-        grouping <- input$grouping
-        plot_type <- ifelse(grouping == "Individual", "dotplot", "pirateplot")
-        
-        # Get the meta information for faceting
-        meta_data <- protein_meta()
-        
-        individual_data <- as.vector(unlist(meta_data["Individual", colnames(selected_protein_data)]))
-        partile_data <- as.vector(unlist(meta_data["Particle", colnames(selected_protein_data)]))
-        isolation_data <- as.vector(unlist(meta_data["Isolation", colnames(selected_protein_data)]))
-        growth_data <- as.vector(unlist(meta_data["Growth", colnames(selected_protein_data)]))
-        
-        total_data <- data.frame(
-          Condition = colnames(selected_protein_data),
-          Value = as.numeric(selected_protein_data),
-          Individual = factor(individual_data),
-          Particle = factor(partile_data),
-          Isolation = factor(isolation_data),
-          Growth = factor(growth_data)
-        )
-        
-        #print(head(total_data))
-        
-        if (input$grouping == "Individual") {
-          # Create the plot
-          p <- ggplot(total_data, aes(x = Individual, y = Value, color = Particle)) +
-            geom_point(position = position_jitter(width = 0.1), size = 3) +
-            theme_grey(base_size = 15) +
-            theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-            labs(y = "Normalized counts",
-                 x = NULL,  # Remove the default x-axis label
-                 title = paste("Expression of", input$lipid)) +
-            scale_x_discrete(labels = function(x) {
-              # Create custom labels based on the levels of 'Individual'
-              sapply(x, function(i) {
-                paste(
-                  unique(total_data$Particle[total_data$Individual == i]), 
-                  "", unique(total_data$Isolation[total_data$Individual == i]), 
-                  "", unique(total_data$Growth[total_data$Individual == i]), 
-                  "", i
-                )
-              })
-            }) #+
-          #scale_color_manual(values = c("EVs" = "steelblue", "Group2" = "darkorange"))
-          
-          
-          # Apply faceting based on the user's choices
-          if (input$facet_isolation & input$facet_growth) {
-            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
-          } else if (input$facet_isolation) {
-            p <- p + facet_grid(cols = vars(Isolation))
-          } else if (input$facet_growth) {
-            p <- p + facet_grid(cols = vars(Growth))
-          }
-          
-        } else if (input$grouping == "Grouped") {
-          p <- ggplot(total_data, aes(x = Particle, y = Value)) +
-            geom_pirate(aes(colour = Particle), bars = FALSE,
-                        points_params = list(shape = 19, alpha = 0.2),
-                        lines_params = list(size = 0.8)) +
-            labs(title = paste("Grouped Lipid Expression for", input$lipid))
-          
-          # Apply faceting based on the user's choices
-          if (input$facet_isolation & input$facet_growth) {
-            p <- p + facet_grid(rows = vars(Isolation), cols = vars(Growth))
-          } else if (input$facet_isolation) {
-            p <- p + facet_grid(cols = vars(Isolation))
-          } else if (input$facet_growth) {
-            p <- p + facet_grid(cols = vars(Growth))
-          }
-        }
-        
-        print(p)
-      } else {
-        ggplot() + labs(title = "No data available")
-      }
+      
+      p <- apply_faceting(p, input)
+      return(p)
+    } else {
+      ggplot() +
+        labs(title = "No data available") +
+        custom_theme
     }
   })
+  
+  # Render plot in the UI
+  output$plot <- renderPlot({
+    print(plot_reactive())
+  })
+  
+  # Download handler for the plot
+  output$downloadPlot <- downloadHandler(
+    filename = function() {
+      paste("plot_", input$dataset, "_", input$protein, ".png", sep = "")
+    },
+    content = function(file) {
+      ggsave(file, plot = plot_reactive(), device = "png", width = 16, height = 9)
+    }
+  )
+  
   
   data <- reactive({
     switch(input$dataset,
