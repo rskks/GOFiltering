@@ -5,7 +5,7 @@ account: superomics
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 12494928
-bundleId: 9067592
+bundleId: 9642756
 url: https://superomics.shinyapps.io/browse/
 version: 1
 asMultiple: FALSE
